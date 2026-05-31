@@ -46,3 +46,29 @@ Set in `client/.env`:
 ```
 VITE_ABACUS_API_URL=http://localhost:5001
 ```
+
+## Production (Railway)
+
+**URL:** `https://viswam-abacus-backend-production.up.railway.app`
+
+Required Railway variables:
+
+| Variable | Value |
+|----------|--------|
+| `MONGO_URI` | Same MongoDB as main LMS |
+| `JWT_SECRET` | Same as main LMS backend |
+| `PORT` | Set by Railway automatically |
+
+Health check: `GET /health` or `GET /api/health`
+
+Client production (`.env.production`):
+
+```
+VITE_ABACUS_API_URL_PROD=https://viswam-abacus-backend-production.up.railway.app
+```
+
+Mobile (`.env`):
+
+```
+EXPO_PUBLIC_ABACUS_API_URL=https://viswam-abacus-backend-production.up.railway.app
+```

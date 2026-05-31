@@ -1,0 +1,10 @@
+# Nixpacks — Node.js Abacus API (Railway)
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci --omit=dev 2>/dev/null || npm install --omit=dev"]
+
+[start]
+cmd = "node index.js"

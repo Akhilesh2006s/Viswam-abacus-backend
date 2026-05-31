@@ -23,8 +23,18 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+const healthPayload = () => ({
+  ok: true,
+  service: 'viswam-abacus-api',
+  port: PORT,
+});
+
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'viswam-abacus-api', port: PORT });
+  res.json(healthPayload());
+});
+
+app.get('/api/health', (_req, res) => {
+  res.json(healthPayload());
 });
 
 app.use('/api/auth', authRoutes);
