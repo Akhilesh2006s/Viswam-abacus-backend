@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 const abacusTeacherSchema = new mongoose.Schema(
   {
     fullName: { type: String, required: true, trim: true },
+    username: {
+      type: String,
+      trim: true,
+      sparse: true,
+      unique: true,
+    },
     email: {
       type: String,
       required: true,
@@ -25,6 +31,7 @@ const abacusTeacherSchema = new mongoose.Schema(
   { timestamps: true, collection: 'abacus_teachers' },
 );
 
+abacusTeacherSchema.index({ username: 1 });
 abacusTeacherSchema.index({ email: 1 });
 abacusTeacherSchema.index({ schoolId: 1 });
 abacusTeacherSchema.index({ schoolId: 1, isActive: 1 });

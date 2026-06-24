@@ -4,15 +4,33 @@ import AbacusStudent from '../models/AbacusStudent.js';
 import AbacusPracticeResult from '../models/AbacusPracticeResult.js';
 import { linkQuestionSetToResult } from '../controllers/questionController.js';
 import AbacusSchool from '../models/AbacusSchool.js';
-import { getCatalogCategories, listStudentsForTeacher } from '../services/abacusService.js';
+import {
+  getCatalogCategories,
+  getPortalAccessMeta,
+  listStudentsForTeacher,
+} from '../services/abacusService.js';
 import {
   buildLevelRankIndex,
   getGlobalRank,
   catalogForUserRank,
+  legacyAbacusEmail,
+  normalizeAbacusLogin,
 } from '../constants/abacusCatalog.js';
+import { emailToUsername } from '../services/abacusUsername.js';
 
-function legacyUsername(email) {
-  return String(email || '').split('@')[0] || email;
+function legacyUsername(userOrEmail) {
+  if (userOrEmail && typeof userOrEmail === 'object' && userOrEmail.username) {
+    return userOrEmail.username;
+  }
+  const raw =
+    typeof userOrEmail === 'string' ? userOrEmail : String(userOrEmail?.email || '');
+  return emailToUsername(raw) || normalizeAbacusLogin(raw);
+}
+
+function practiceEmailFilter(user) {
+  const login = normalizeAbacusLogin(user.email);
+  const legacy = legacyAbacusEmail(login);
+  return { $or: [{ email: login }, { email: legacy }, { email: user.email }] };
 }
 
 async function findPortalUser(userId, role) {
@@ -29,9 +47,9 @@ function toLegacyStudent(user, role) {
   const rank = getGlobalRank(user.category, user.level);
   return {
     id: user._id.toString(),
-    username: legacyUsername(user.email),
+    username: legacyUsername(user),
     name: user.fullName,
-    email: user.email,
+    email: normalizeAbacusLogin(user.email),
     category: user.category,
     level: user.level,
     rank: rank || 1,
@@ -59,6 +77,7 @@ export async function portalMeHandler(req, res) {
     }
 
     const student = toLegacyStudent(user, role);
+    const access = await getPortalAccessMeta(user.category, user.level);
 
     let students = [];
     let stats = undefined;
@@ -67,7 +86,7 @@ export async function portalMeHandler(req, res) {
       students = rows.map((s) => ({
         id: s._id.toString(),
         fullName: s.fullName,
-        email: s.email,
+        email: normalizeAbacusLogin(s.email),
         className: s.className || '',
         category: s.category,
         level: s.level,
@@ -81,15 +100,18 @@ export async function portalMeHandler(req, res) {
         user: {
           id: user._id.toString(),
           fullName: user.fullName,
-          email: user.email,
+          email: normalizeAbacusLogin(user.email),
+          username: user.username || emailToUsername(user.email),
           role,
           category: user.category,
           level: user.level,
           className: user.className || '',
           phone: user.phone || '',
+          userRank: access.userRank,
+          accessSummary: access.accessSummary,
         },
         school,
-        student,
+        student: { ...student, accessSummary: access.accessSummary },
         ...(role === 'teacher' ? { students, stats } : {}),
       },
     });
@@ -129,7 +151,7 @@ export async function listPracticeResultsHandler(req, res) {
     const user = await findPortalUser(req.userId, req.user?.role);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const rows = await AbacusPracticeResult.find({ email: user.email })
+    const rows = await AbacusPracticeResult.find(practiceEmailFilter(user))
       .sort({ createdAt: -1 })
       .limit(100)
       .lean();
@@ -174,7 +196,7 @@ export async function savePracticeResultHandler(req, res) {
     const doc = await AbacusPracticeResult.create({
       userId: user._id,
       userRole: role,
-      email: user.email,
+      email: normalizeAbacusLogin(user.email),
       mode: String(mode || 'practice'),
       category: String(category || user.category || ''),
       levelName: String(levelName || user.level || ''),

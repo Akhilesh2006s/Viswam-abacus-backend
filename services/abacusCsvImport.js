@@ -8,7 +8,68 @@ import {
   createTeacher,
   createStudent,
 } from './abacusService.js';
-import { normalizeAbacusEmail, validateCategoryLevel } from '../constants/abacusCatalog.js';
+import { normalizeAbacusLogin } from '../constants/abacusCatalog.js';
+import {
+  abacusLoginLookupFilter,
+  normalizeAbacusIdentityFields,
+} from './abacusUsername.js';
+
+async function verifyAbacusPassword(candidate, storedHash) {
+  const pwd = String(candidate || '');
+  const hash = String(storedHash || '');
+  if (!hash) return false;
+  if (/^\$2[aby]\$/.test(hash)) {
+    return bcrypt.compare(pwd, hash);
+  }
+  return hash === pwd;
+}
+
+async function finalizeAbacusLogin(user) {
+  const identity = normalizeAbacusIdentityFields(user.email, user.username);
+  if (identity.email) user.email = identity.email;
+  if (identity.username) user.username = identity.username;
+
+  const stored = String(user.password || '');
+  if (stored && !/^\$2[aby]\$/.test(stored)) {
+    user.password = await bcrypt.hash(stored, 12);
+  }
+
+  user.lastLogin = new Date();
+  try {
+    await user.save();
+  } catch (err) {
+    console.warn('Abacus login finalize save skipped:', err?.message || err);
+  }
+}
+
+/** Used by login — find abacus teacher/student by username */
+export async function findAbacusTeacherForLogin(loginId, password) {
+  const lookup = abacusLoginLookupFilter(loginId);
+  if (!lookup) return null;
+  const teacher = await AbacusTeacher.findOne({
+    isActive: { $ne: false },
+    ...lookup,
+  });
+  if (!teacher) return null;
+  const ok = await verifyAbacusPassword(password, teacher.password || '');
+  if (!ok) return null;
+  await finalizeAbacusLogin(teacher);
+  return teacher;
+}
+
+export async function findAbacusStudentForLogin(loginId, password) {
+  const lookup = abacusLoginLookupFilter(loginId);
+  if (!lookup) return null;
+  const student = await AbacusStudent.findOne({
+    isActive: { $ne: false },
+    ...lookup,
+  });
+  if (!student) return null;
+  const ok = await verifyAbacusPassword(password, student.password || '');
+  if (!ok) return null;
+  await finalizeAbacusLogin(student);
+  return student;
+}
 
 const HEADER_ALIASES = {
   classname: 'class',
@@ -85,7 +146,7 @@ function parseCsvFile(fileBuffer, originalName) {
 
 export async function importAbacusTeachersCsv(schoolId, fileBuffer, originalName) {
   const { headers, rows } = parseCsvFile(fileBuffer, originalName);
-  const missing = ['name', 'email', 'password', 'category', 'level'].filter((h) => !headers.includes(h));
+  const missing = ['name', 'password', 'category', 'level'].filter((h) => !headers.includes(h));
   if (missing.length) {
     throw new Error(`Missing required headers: ${missing.join(', ')}`);
   }
@@ -98,7 +159,7 @@ export async function importAbacusTeachersCsv(schoolId, fileBuffer, originalName
     try {
       const teacher = await createTeacher(schoolId, {
         name: row.name,
-        email: normalizeAbacusEmail(row.email),
+        email: row.email ? normalizeAbacusLogin(row.email) : '',
         password: row.password,
         phone: row.phone || '',
         category: row.category,
@@ -115,7 +176,7 @@ export async function importAbacusTeachersCsv(schoolId, fileBuffer, originalName
 
 export async function importAbacusStudentsCsv(schoolId, fileBuffer, originalName) {
   const { headers, rows } = parseCsvFile(fileBuffer, originalName);
-  const missing = ['name', 'email', 'password', 'category', 'level'].filter((h) => !headers.includes(h));
+  const missing = ['name', 'password', 'category', 'level'].filter((h) => !headers.includes(h));
   if (missing.length) {
     throw new Error(`Missing required headers: ${missing.join(', ')}`);
   }
@@ -127,7 +188,7 @@ export async function importAbacusStudentsCsv(schoolId, fileBuffer, originalName
     try {
       const student = await createStudent(schoolId, {
         name: row.name,
-        email: normalizeAbacusEmail(row.email),
+        email: row.email ? normalizeAbacusLogin(row.email) : '',
         password: row.password,
         class: row.class || '',
         category: row.category,
@@ -140,31 +201,4 @@ export async function importAbacusStudentsCsv(schoolId, fileBuffer, originalName
   }
 
   return { created: created.length, errors, students: created };
-}
-
-/** Used by login — find abacus teacher/student by email */
-export async function findAbacusTeacherForLogin(email, password) {
-  const teacher = await AbacusTeacher.findOne({
-    email: String(email).toLowerCase().trim(),
-    isActive: { $ne: false },
-  });
-  if (!teacher) return null;
-  const ok = await bcrypt.compare(password, teacher.password || '');
-  if (!ok) return null;
-  teacher.lastLogin = new Date();
-  await teacher.save();
-  return teacher;
-}
-
-export async function findAbacusStudentForLogin(email, password) {
-  const student = await AbacusStudent.findOne({
-    email: String(email).toLowerCase().trim(),
-    isActive: { $ne: false },
-  });
-  if (!student) return null;
-  const ok = await bcrypt.compare(password, student.password || '');
-  if (!ok) return null;
-  student.lastLogin = new Date();
-  await student.save();
-  return student;
 }

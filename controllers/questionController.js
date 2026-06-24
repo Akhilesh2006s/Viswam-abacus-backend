@@ -4,9 +4,23 @@ import { generateQuestionSet } from '../services/abacusQuestionGenerator.js';
 import { getCatalogCategories } from '../services/abacusService.js';
 import {
   getGlobalRank,
+  legacyAbacusEmail,
+  normalizeAbacusLogin,
   validateCategoryLevel,
   catalogForUserRank,
 } from '../constants/abacusCatalog.js';
+
+function questionEmailFilter(user) {
+  const login = normalizeAbacusLogin(user.email);
+  const legacy = legacyAbacusEmail(login);
+  return { $or: [{ email: login }, { email: legacy }, { email: user.email }] };
+}
+
+function userOwnsRecord(user, doc) {
+  const login = normalizeAbacusLogin(user.email);
+  const docLogin = normalizeAbacusLogin(doc.email);
+  return docLogin === login;
+}
 import AbacusTeacher from '../models/AbacusTeacher.js';
 import AbacusStudent from '../models/AbacusStudent.js';
 
@@ -66,7 +80,7 @@ export async function generateQuestionsHandler(req, res) {
     const doc = await AbacusQuestionSet.create({
       userId: user._id,
       userRole: role,
-      email: user.email,
+      email: normalizeAbacusLogin(user.email),
       mode: String(mode || 'practice'),
       category: validated.category,
       levelName: validated.level,
@@ -98,7 +112,7 @@ export async function getQuestionSetHandler(req, res) {
 
     const doc = await AbacusQuestionSet.findById(req.params.id).lean();
     if (!doc) return res.status(404).json({ success: false, message: 'Question set not found' });
-    if (doc.email !== user.email) {
+    if (!userOwnsRecord(user, doc)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -125,7 +139,7 @@ export async function listQuestionSetsHandler(req, res) {
     const user = await findPortalUser(req.userId, req.user?.role);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const rows = await AbacusQuestionSet.find({ email: user.email })
+    const rows = await AbacusQuestionSet.find(questionEmailFilter(user))
       .sort({ createdAt: -1 })
       .limit(50)
       .select('category levelName levelRank mode questions createdAt resultId')

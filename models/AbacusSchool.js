@@ -30,6 +30,8 @@ const abacusSchoolSchema = new mongoose.Schema(
       default: () => ({}),
     },
     notes: { type: String, trim: true, default: '' },
+    category: { type: String, trim: true, default: '' },
+    level: { type: String, trim: true, default: '' },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true, collection: 'abacus_schools' },

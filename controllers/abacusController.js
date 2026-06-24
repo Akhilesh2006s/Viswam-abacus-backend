@@ -17,6 +17,9 @@ import {
   deleteStudent,
   assignStudentsToTeacher,
   listStudentsForTeacher,
+  listStudentCandidatesForTeacher,
+  suggestNextUsername,
+  previewLoginUsername,
 } from '../services/abacusService.js';
 import {
   importAbacusTeachersCsv,
@@ -24,6 +27,17 @@ import {
 } from '../services/abacusCsvImport.js';
 import AbacusTeacher from '../models/AbacusTeacher.js';
 import AbacusStudent from '../models/AbacusStudent.js';
+
+function abacusErrorMessage(err) {
+  if (err?.code === 11000) {
+    const m = String(err.message).match(/email: "([^"]+)"/);
+    if (m) {
+      return `Login ${m[1]} is already in use by an active Abacus account`;
+    }
+    return 'This login is already in use by an active Abacus account';
+  }
+  return err.message;
+}
 
 export async function getCatalogHandler(_req, res) {
   try {
@@ -70,12 +84,25 @@ export async function getSchoolHandler(req, res) {
   }
 }
 
+export async function previewLoginUsernameHandler(req, res) {
+  try {
+    const username = await previewLoginUsername({
+      name: req.query.name,
+      schoolCode: req.query.schoolCode,
+      role: req.query.role,
+    });
+    res.json({ success: true, data: { username, role: String(req.query.role || '').trim().toLowerCase() } });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
 export async function createSchoolHandler(req, res) {
   try {
     const school = await createSchool(req.body);
     res.status(201).json({ success: true, data: school });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ success: false, message: abacusErrorMessage(err) });
   }
 }
 
@@ -106,12 +133,22 @@ export async function listTeachersHandler(req, res) {
   }
 }
 
+export async function suggestUsernameHandler(req, res) {
+  try {
+    const role = String(req.query.role || '').trim().toLowerCase();
+    const username = await suggestNextUsername(req.params.schoolId, role);
+    res.json({ success: true, data: { username, role } });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
 export async function createTeacherHandler(req, res) {
   try {
     const teacher = await createTeacher(req.params.schoolId, req.body);
     res.status(201).json({ success: true, data: teacher });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ success: false, message: abacusErrorMessage(err) });
   }
 }
 
@@ -163,7 +200,7 @@ export async function createStudentHandler(req, res) {
     const student = await createStudent(req.params.schoolId, req.body);
     res.status(201).json({ success: true, data: student });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ success: false, message: abacusErrorMessage(err) });
   }
 }
 
@@ -217,15 +254,7 @@ export async function listTeacherStudentsHandler(req, res) {
     if (!teacher || teacher.isActive === false) {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
-    const rows = await AbacusStudent.find({
-      schoolId: teacher.schoolId,
-      category: teacher.category,
-      level: teacher.level,
-      isActive: { $ne: false },
-    })
-      .select('fullName email className category level teacherId')
-      .sort({ fullName: 1 })
-      .lean();
+    const rows = await listStudentCandidatesForTeacher(teacher);
 
     const teacherIds = [...new Set(rows.map((r) => r.teacherId?.toString()).filter(Boolean))];
     const teachers = teacherIds.length

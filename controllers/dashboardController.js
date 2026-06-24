@@ -1,7 +1,9 @@
 import AbacusTeacher from '../models/AbacusTeacher.js';
 import AbacusStudent from '../models/AbacusStudent.js';
 import AbacusSchool from '../models/AbacusSchool.js';
-import { listStudentsForTeacher } from '../services/abacusService.js';
+import { normalizeAbacusLogin } from '../constants/abacusCatalog.js';
+import { getPortalAccessMeta, listStudentsForTeacher } from '../services/abacusService.js';
+import { emailToUsername } from '../services/abacusUsername.js';
 
 async function loadSchool(schoolId) {
   const school = await AbacusSchool.findById(schoolId).lean();
@@ -23,6 +25,7 @@ export async function teacherDashboardHandler(req, res) {
 
     const school = await loadSchool(teacher.schoolId);
     const students = await listStudentsForTeacher(teacher);
+    const access = await getPortalAccessMeta(teacher.category, teacher.level);
 
     res.json({
       success: true,
@@ -30,16 +33,19 @@ export async function teacherDashboardHandler(req, res) {
         teacher: {
           id: teacher._id.toString(),
           fullName: teacher.fullName,
-          email: teacher.email,
+          email: normalizeAbacusLogin(teacher.email),
+          username: teacher.username || emailToUsername(teacher.email),
           phone: teacher.phone || '',
           category: teacher.category,
           level: teacher.level,
+          userRank: access.userRank,
+          accessSummary: access.accessSummary,
         },
         school,
         students: students.map((s) => ({
           id: s._id.toString(),
           fullName: s.fullName,
-          email: s.email,
+          email: normalizeAbacusLogin(s.email),
           className: s.className || '',
           category: s.category,
           level: s.level,
@@ -62,6 +68,7 @@ export async function studentDashboardHandler(req, res) {
     }
 
     const school = await loadSchool(student.schoolId);
+    const access = await getPortalAccessMeta(student.category, student.level);
 
     res.json({
       success: true,
@@ -69,10 +76,13 @@ export async function studentDashboardHandler(req, res) {
         student: {
           id: student._id.toString(),
           fullName: student.fullName,
-          email: student.email,
+          email: normalizeAbacusLogin(student.email),
+          username: student.username || emailToUsername(student.email),
           className: student.className || '',
           category: student.category,
           level: student.level,
+          userRank: access.userRank,
+          accessSummary: access.accessSummary,
         },
         school,
       },

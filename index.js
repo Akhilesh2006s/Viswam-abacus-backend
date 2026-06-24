@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import connectDB from './config/database.js';
+import { repairReleasedInactiveAbacusLogins } from './services/abacusUsername.js';
 import abacusRoutes from './routes/abacus.js';
 import authRoutes from './routes/auth.js';
 import portalRoutes from './routes/portal.js';
@@ -47,6 +48,17 @@ app.use((err, _req, res, _next) => {
 });
 
 await connectDB();
+
+try {
+  const repaired = await repairReleasedInactiveAbacusLogins();
+  if (repaired.teachers || repaired.students) {
+    console.log(
+      `Abacus login repair: released ${repaired.teachers} teacher(s), ${repaired.students} student(s)`,
+    );
+  }
+} catch (repairErr) {
+  console.warn('Abacus login repair skipped:', repairErr?.message || repairErr);
+}
 
 app.listen(PORT, () => {
   console.log(`Abacus API running on http://localhost:${PORT}`);
